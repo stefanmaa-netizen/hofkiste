@@ -295,7 +295,18 @@ async function suggestRecipe(ingredients){
   state.suggestingRecipe = true; state.recipeMsg = null; render();
   try{
     const { data, error } = await supabase.functions.invoke('suggest-recipe', { body: { ingredients } });
-    if(error) throw error;
+    if(error){
+      // supabase-js gibt bei einer Fehlerantwort nur eine generische Meldung im .message;
+      // die eigentliche Fehlerursache steckt im Response-Body unter error.context.
+      let detail = error.message;
+      try{
+        if(error.context && typeof error.context.json === 'function'){
+          const body = await error.context.json();
+          if(body?.error) detail = body.error;
+        }
+      } catch(_){ /* Antwort war kein JSON - generische Meldung behalten */ }
+      throw new Error(detail);
+    }
     if(data?.error) throw new Error(data.error);
     state.draftPost.recipeTitle = data.title || '';
     state.draftPost.recipeText = data.text || '';
