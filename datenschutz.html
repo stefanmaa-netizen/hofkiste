@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Datenschutzerklärung · Hofkiste</title>
+<link rel="stylesheet" href="legal.css">
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="index.html">&larr; Zurück zur Hofkiste</a>
+  <h1>Datenschutzerklärung</h1>
+
+  <p class="todo">⚠️ Platzhalter: [Verantwortliche Person/Kontakt] unten und Angaben zu Auftragsverarbeitungsverträgen bitte vor Live-Betrieb prüfen und vervollständigen.</p>
+
+  <h2>1. Verantwortlicher</h2>
+  <p>
+    [Vor- und Nachname bzw. Firmenname]<br>
+    [Straße, PLZ, Ort]<br>
+    E-Mail: [kontakt@beispiel.de]<br>
+    (siehe <a href="impressum.html">Impressum</a>)
+  </p>
+
+  <h2>2. Welche Daten wir verarbeiten</h2>
+  <p>Bei Nutzung der Hofkiste-Seite verarbeiten wir folgende personenbezogene Daten:</p>
+  <ul>
+    <li><b>Registrierung:</b> Name, E-Mail-Adresse (Tabelle <code>customers</code>)</li>
+    <li><b>Alternativtermin-Anfragen:</b> gewünschtes Datum, optionale Notiz, Bearbeitungsstatus, ggf. Abhol-PIN (Tabelle <code>requests</code>)</li>
+    <li><b>Technisch:</b> eine anonyme, zufällige Nutzer-ID (Supabase Anonymous Auth) wird im Browser (localStorage) gespeichert, um die Sitzung wiederzuerkennen</li>
+    <li><b>Server-Logs:</b> beim Aufruf der Seite über GitHub Pages werden IP-Adresse, Zeitpunkt und aufgerufene Datei kurzzeitig in den Server-Logs des Hosters (GitHub, siehe Punkt 4) verarbeitet</li>
+  </ul>
+
+  <h2>3. Zweck und Rechtsgrundlage</h2>
+  <p>
+    Die Verarbeitung erfolgt zur Abwicklung der Gemüsekisten-Anfragen und -Kommunikation
+    (Art. 6 Abs. 1 lit. b DSGVO – Vertragserfüllung bzw. vorvertragliche Maßnahmen).
+    Technisch notwendige Speicherung (Sitzungs-ID) erfolgt auf Grundlage von
+    Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse am Betrieb der Seite).
+  </p>
+
+  <h2>4. Eingesetzte Dienstleister (Auftragsverarbeitung)</h2>
+  <ul>
+    <li>
+      <b>Supabase Inc.</b> – Datenbank- und Auth-Hosting der eingegebenen Daten,
+      Serverstandort der Datenbank: EU (Frankfurt, eu-central-1).
+      [Bitte prüfen: Auftragsverarbeitungsvertrag (AVV) mit Supabase abgeschlossen? Siehe supabase.com/legal.]
+    </li>
+    <li>
+      <b>GitHub, Inc. (GitHub Pages)</b> – Hosting der statischen Website.
+      Serverstandort kann außerhalb der EU liegen; GitHub verarbeitet dabei
+      technische Zugriffsdaten (u.a. IP-Adresse). Details:
+      <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement" target="_blank" rel="noopener">GitHub Privacy Statement</a>.
+    </li>
+    <li>
+      <b>Google Fonts</b> – Schriftarten (Fraunces, Work Sans) werden aktuell über
+      <code>fonts.googleapis.com</code> geladen; dabei wird die IP-Adresse an Google übertragen.
+      [Todo: ggf. auf lokal eingebundene Schriftarten umstellen, um Datenübertragung an Google zu vermeiden.]
+    </li>
+  </ul>
+
+  <h2>5. Speicherdauer</h2>
+  <p>
+    Kund:innendaten werden gespeichert, solange das Kisten-Abo bzw. die Geschäftsbeziehung
+    besteht, und auf Wunsch gelöscht. [Konkrete Löschfristen hier ergänzen, sobald festgelegt.]
+  </p>
+
+  <h2>6. Deine Rechte</h2>
+  <p>Du hast das Recht auf:</p>
+  <ul>
+    <li>Auskunft über die zu deiner Person gespeicherten Daten (Art. 15 DSGVO)</li>
+    <li>Berichtigung unrichtiger Daten (Art. 16 DSGVO)</li>
+    <li>Löschung deiner Daten (Art. 17 DSGVO)</li>
+    <li>Einschränkung der Verarbeitung (Art. 18 DSGVO)</li>
+    <li>Datenübertragbarkeit (Art. 20 DSGVO)</li>
+    <li>Widerspruch gegen die Verarbeitung (Art. 21 DSGVO)</li>
+  </ul>
+  <p>Wende dich dazu einfach per E-Mail an die oben genannte Kontaktadresse.</p>
+
+  <h2>7. Beschwerderecht</h2>
+  <p>
+    Du hast das Recht, dich bei einer Datenschutz-Aufsichtsbehörde zu beschweren,
+    z.B. bei der für dich zuständigen Landesdatenschutzbehörde.
+  </p>
+
+  <p class="footer-note">Siehe auch: <a href="impressum.html">Impressum</a></p>
+</div>
+</body>
+</html>
