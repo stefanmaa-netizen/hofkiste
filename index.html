@@ -151,7 +151,13 @@ let state = {
   busy: false,
   // Nach Klick auf Einladungs-/Passwort-vergessen-Link: erst Passwort (+Name) festlegen,
   // bevor die Person normal weiterklicken kann.
-  pendingPasswordSetup: initialAuthFlowType === 'invite' || initialAuthFlowType === 'recovery'
+  pendingPasswordSetup: initialAuthFlowType === 'invite' || initialAuthFlowType === 'recovery',
+  // Entwurf des Admin-Veröffentlichen-Formulars. render() baut das DOM bei jeder Statusänderung
+  // komplett neu auf, daher müssen die Feldwerte hier zwischengespeichert werden, sonst gehen sie
+  // z.B. beim Klick auf "Rezept vorschlagen" verloren.
+  draftPost: { week: '', content: '', recipeTitle: '', recipeText: '' },
+  suggestingRecipe: false,
+  recipeMsg: null
 };
 
 function esc(s){ return (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -275,11 +281,29 @@ async function publishPost(week, content, recipeTitle, recipeText){
     });
     if(error) throw error;
     state.msg = { type: 'ok', text: 'Beitrag veröffentlicht.' };
+    state.recipeMsg = null;
+    state.draftPost = { week: '', content: '', recipeTitle: '', recipeText: '' };
     await loadAll();
   } catch(e){
     state.msg = { type: 'err', text: 'Veröffentlichen fehlgeschlagen: ' + e.message };
   } finally {
     state.busy = false; render();
+  }
+}
+
+async function suggestRecipe(ingredients){
+  state.suggestingRecipe = true; state.recipeMsg = null; render();
+  try{
+    const { data, error } = await supabase.functions.invoke('suggest-recipe', { body: { ingredients } });
+    if(error) throw error;
+    if(data?.error) throw new Error(data.error);
+    state.draftPost.recipeTitle = data.title || '';
+    state.draftPost.recipeText = data.text || '';
+    state.recipeMsg = { type: 'ok', text: `Rezeptvorschlag übernommen (Quelle: ${data.sourceUrl || 'Spoonacular'}). Ist auf Englisch — bitte vor dem Veröffentlichen prüfen/übersetzen.` };
+  } catch(e){
+    state.recipeMsg = { type: 'err', text: 'Rezeptvorschlag fehlgeschlagen: ' + e.message };
+  } finally {
+    state.suggestingRecipe = false; render();
   }
 }
 
@@ -299,7 +323,11 @@ async function adminLogin(email, password){
 
 async function signOut(){
   await supabase.auth.signOut();
-  state = { tab: 'home', session: null, me: null, isAdmin: false, posts: state.posts, requests: [], customers: [], msg: null, busy: false, pendingPasswordSetup: false };
+  state = {
+    tab: 'home', session: null, me: null, isAdmin: false, posts: state.posts, requests: [], customers: [],
+    msg: null, busy: false, pendingPasswordSetup: false,
+    draftPost: { week: '', content: '', recipeTitle: '', recipeText: '' }, suggestingRecipe: false, recipeMsg: null
+  };
   await loadAll();
 }
 
@@ -432,13 +460,16 @@ function renderAdmin(){
     <h2 class="section-title">Neuen Beitrag veröffentlichen</h2>
     <div class="card">
       <label for="p-week">Wochen-Titel</label>
-      <input id="p-week" placeholder="z.B. KW 27 · 30. Juni – 6. Juli">
+      <input id="p-week" placeholder="z.B. KW 27 · 30. Juni – 6. Juli" value="${esc(state.draftPost.week)}">
       <label for="p-content">Was ist diese Woche in der Kiste?</label>
-      <textarea id="p-content" placeholder="z.B. Zucchini, Tomaten, Salat, Kartoffeln, Kräuterbund ..."></textarea>
+      <textarea id="p-content" placeholder="z.B. Zucchini, Tomaten, Salat, Kartoffeln, Kräuterbund ...">${esc(state.draftPost.content)}</textarea>
+      <button type="button" class="btn secondary small" ${state.suggestingRecipe?'disabled':''} onclick="handleSuggestRecipe()">${state.suggestingRecipe ? 'Rezept wird gesucht …' : 'Rezept vorschlagen'}</button>
+      <p class="muted" style="margin-top:8px;">Schlägt anhand der Zutaten oben ein Rezept vor (via Spoonacular). Ergebnis ist Englisch — bitte vor dem Veröffentlichen prüfen/übersetzen.</p>
+      ${state.recipeMsg ? `<div class="msg ${state.recipeMsg.type}">${esc(state.recipeMsg.text)}</div>` : ''}
       <label for="p-recipe-title">Rezeptidee – Titel (optional)</label>
-      <input id="p-recipe-title" placeholder="z.B. Ofengemüse mit Kräutern">
+      <input id="p-recipe-title" placeholder="z.B. Ofengemüse mit Kräutern" value="${esc(state.draftPost.recipeTitle)}">
       <label for="p-recipe-text">Rezeptidee – Beschreibung</label>
-      <textarea id="p-recipe-text" placeholder="Kurzanleitung ..."></textarea>
+      <textarea id="p-recipe-text" placeholder="Kurzanleitung ...">${esc(state.draftPost.recipeText)}</textarea>
       <button class="btn" ${state.busy?'disabled':''} onclick="handlePublish()">Veröffentlichen</button>
       ${state.msg ? `<div class="msg ${state.msg.type}">${esc(state.msg.text)}</div>` : ''}
     </div>
@@ -564,8 +595,19 @@ window.handlePublish = async function(){
   const content = document.getElementById('p-content').value.trim();
   const recipeTitle = document.getElementById('p-recipe-title').value.trim();
   const recipeText = document.getElementById('p-recipe-text').value.trim();
+  state.draftPost = { week, content, recipeTitle, recipeText };
   if(!week || !content){ state.msg = {type:'err', text:'Bitte Titel und Inhalt angeben.'}; render(); return; }
   await publishPost(week, content, recipeTitle, recipeText);
+};
+
+window.handleSuggestRecipe = async function(){
+  const week = document.getElementById('p-week').value.trim();
+  const content = document.getElementById('p-content').value.trim();
+  const recipeTitle = document.getElementById('p-recipe-title').value.trim();
+  const recipeText = document.getElementById('p-recipe-text').value.trim();
+  state.draftPost = { week, content, recipeTitle, recipeText };
+  if(!content){ state.recipeMsg = {type:'err', text:'Bitte zuerst eintragen, was in der Kiste ist.'}; render(); return; }
+  await suggestRecipe(content);
 };
 
 window.handleAdminLogin = async function(){

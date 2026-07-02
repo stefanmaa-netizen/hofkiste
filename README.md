@@ -70,6 +70,32 @@ hinterlegen unter Authentication → Emails → SMTP Settings (z. B. über SendG
 Alte, vor diesem Umbau per anonymer Selbstregistrierung angelegte Test-Konten können nicht mehr
 einloggen (kein Passwort) und sollten bei Gelegenheit im Dashboard aufgeräumt werden.
 
+## Rezeptvorschlag (Spoonacular)
+
+Im Admin-Bereich gibt es unter "Was ist diese Woche in der Kiste?" einen Button **"Rezept
+vorschlagen"**. Der ruft die Supabase Edge Function [`suggest-recipe`](supabase/functions/suggest-recipe/index.ts)
+auf, die:
+
+1. den eingetragenen Zutatentext anhand eines kleinen Wörterbuchs grob ins Englische übersetzt
+   (die gängigsten Gemüsekisten-Zutaten sind abgedeckt, unbekannte Wörter werden unübersetzt
+   durchgereicht),
+2. darüber die [Spoonacular API](https://spoonacular.com/food-api) (`findByIngredients` +
+   `/information`) nach einem passenden Rezept fragt,
+3. Titel + Beschreibung zurückgibt, die automatisch in die Rezept-Felder übernommen werden.
+
+**Wichtig:** Das Ergebnis ist auf Englisch — der Admin sollte es vor dem Veröffentlichen prüfen und
+bei Bedarf übersetzen/anpassen. Es wird nichts automatisch veröffentlicht, nur vorausgefüllt.
+
+**Einrichtung (einmalig):**
+1. Kostenlosen Account unter [spoonacular.com/food-api](https://spoonacular.com/food-api) anlegen
+   (keine Kreditkarte nötig, 150 Requests/Tag im Free-Tier) und den API-Key kopieren.
+2. Supabase Dashboard → Edge Functions → `suggest-recipe` → **Secrets** → neues Secret
+   `SPOONACULAR_API_KEY` mit dem Key als Wert anlegen.
+3. Fertig — der Key wird nur serverseitig in der Edge Function verwendet, landet nie im Frontend-Code.
+
+Die Funktion prüft serverseitig, dass nur eingeloggte Admins sie aufrufen dürfen (schützt das
+Tageskontingent).
+
 ## Rechtliches
 
 [`impressum.html`](impressum.html) und [`datenschutz.html`](datenschutz.html) enthalten Platzhalter
