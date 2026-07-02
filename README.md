@@ -21,13 +21,35 @@ Zugangsdaten liegen in `config.js` (Supabase-URL + **anon key**, öffentlich und
 1. **Anonymous Sign-Ins aktivieren** (für die Kund:innen-Registrierung ohne Passwort):
    Supabase Dashboard → Authentication → Sign In / Providers → **Anonymous Sign-Ins** → aktivieren.
 
-2. **Admin-Konto anlegen:**
+2. **Ersten Admin-Account anlegen:**
    - Supabase Dashboard → Authentication → Users → **Add user** (E-Mail + Passwort festlegen)
    - Danach im SQL Editor:
      ```sql
      insert into public.admins (id, email)
      values ('<user-id-aus-auth-users>', '<email>');
      ```
+   - Für **weitere** Admins danach nicht mehr direkt in die Tabelle schreiben, sondern
+     als eingeloggter Admin die RPC-Funktion nutzen (serverseitig geprüft, dass nur
+     bestehende Admins neue anlegen dürfen):
+     ```js
+     await supabase.rpc('promote_to_admin', {
+       target_user_id: '<uuid-aus-auth.users>',
+       target_email: 'neue-person@example.de'
+     });
+     ```
+     Die Person muss vorher wie oben als normaler Nutzer angelegt worden sein.
+
+3. **Empfohlene Auth-Einstellungen im Dashboard** (nicht per Migration setzbar):
+   - Authentication → Rate Limits: Limits für Anonymous Sign-ins und Sign-ups sinnvoll begrenzen
+     (Standardwerte sind für ein kleines Projekt oft zu großzügig).
+   - Authentication → Policies → **Leaked Password Protection** aktivieren (prüft Admin-Passwörter
+     gegen bekannte Datenlecks).
+
+## Rechtliches
+
+[`impressum.html`](impressum.html) und [`datenschutz.html`](datenschutz.html) enthalten Platzhalter
+für Pflichtangaben (Name/Anschrift, Kontakt, DSGVO-Verantwortlicher). **Vor dem Livegang mit echten
+Kund:innen müssen diese durch echte Daten ersetzt werden.**
 
 ## GitHub Pages
 

@@ -108,4 +108,84 @@ create policy "requests admin update" on public.requests
 -- 2. Danach dessen User-ID in die admins-Tabelle eintragen:
 --
 --    insert into public.admins (id, email) values ('<user-id-aus-auth-users>', '<email>');
+--
+-- Für jeden weiteren Admin danach die Funktion promote_to_admin() nutzen
+-- (siehe Abschnitt "Folge-Migrationen" unten) statt direkt in die Tabelle zu schreiben.
 -- ---------------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------------
+-- Folge-Migrationen (nach dem initialen Launch, per Supabase-MCP angewendet)
+-- Diese Statements sind bereits auf dem Live-Projekt ausgeführt worden.
+-- Reihenfolge und Migration-Namen: siehe `supabase migrations list` /
+-- list_migrations. Hier nur zur Dokumentation im Repo.
+-- ---------------------------------------------------------------------------
+
+-- 1) add_validation_constraints
+-- Serverseitige Validierung (ergänzt clientseitige Checks, die man umgehen kann).
+-- NOT VALID: gilt für neue/zukünftige INSERT/UPDATE, bestehende Zeilen (Testdaten
+-- aus der Entwicklungsphase) werden nicht rückwirkend geprüft.
+alter table public.customers
+  add constraint customers_name_length check (char_length(trim(name)) between 1 and 200) not valid,
+  add constraint customers_email_format check (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$') not valid,
+  add constraint customers_email_length check (char_length(email) <= 320) not valid;
+
+alter table public.admins
+  add constraint admins_email_format check (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$') not valid;
+
+alter table public.posts
+  add constraint posts_title_length check (char_length(trim(title)) between 1 and 200) not valid,
+  add constraint posts_week_length check (char_length(trim(week)) between 1 and 200) not valid,
+  add constraint posts_content_length check (char_length(content) between 1 and 5000) not valid,
+  add constraint posts_recipe_title_length check (recipe_title is null or char_length(recipe_title) <= 200) not valid,
+  add constraint posts_recipe_text_length check (recipe_text is null or char_length(recipe_text) <= 5000) not valid;
+
+alter table public.requests
+  add constraint requests_note_length check (note is null or char_length(note) <= 500) not valid;
+
+-- 2) add_admin_delete_policies
+-- Admins konnten posts/requests bisher nicht löschen (nur select/insert/update-Policies existierten).
+create policy "posts admin delete" on public.posts
+  for delete using (public.is_admin());
+
+create policy "requests admin delete" on public.requests
+  for delete using (public.is_admin());
+
+-- 3) harden_is_admin_function_exposure
+-- Security-Advisor-Warnung: is_admin() war als SECURITY DEFINER Funktion im
+-- "public"-Schema öffentlich per REST-RPC aufrufbar (/rest/v1/rpc/is_admin).
+-- Durch Verschieben in ein nicht per API exponiertes Schema bleibt sie für
+-- RLS-Policies nutzbar (Postgres referenziert Funktionen intern per OID,
+-- nicht per Schemaname), ist aber nicht mehr direkt aufrufbar.
+create schema if not exists internal;
+alter function public.is_admin() set schema internal;
+-- Ab hier heißt die Funktion also internal.is_admin() — bestehende Policies
+-- funktionieren unverändert weiter.
+
+-- 4) add_promote_to_admin_rpc
+-- Sichereres Admin-Onboarding: statt direktem INSERT im SQL-Editor kann ein
+-- bestehender Admin neue Admins per RPC anlegen (serverseitig geprüft).
+create or replace function public.promote_to_admin(target_user_id uuid, target_email text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not internal.is_admin() then
+    raise exception 'Nur bestehende Admins dürfen neue Admins anlegen.';
+  end if;
+  insert into public.admins (id, email) values (target_user_id, target_email)
+  on conflict (id) do nothing;
+end;
+$$;
+
+revoke all on function public.promote_to_admin(uuid, text) from public;
+grant execute on function public.promote_to_admin(uuid, text) to authenticated;
+
+-- Nutzung (als eingeloggter Admin, z.B. über den Supabase JS-Client in der Konsole):
+--   await supabase.rpc('promote_to_admin', {
+--     target_user_id: '<uuid-aus-auth.users>',
+--     target_email: 'neue-person@example.de'
+--   });
+-- Der/die neue Admin muss vorher als normaler Nutzer (E-Mail/Passwort) im
+-- Supabase Dashboard unter Authentication → Users angelegt worden sein.
