@@ -40,3 +40,4 @@ Danach ist die Seite live unter `https://<username>.github.io/<repo>/`.
 ## Lokale Entwicklung
 
 Kein Build-Schritt nötig — `index.html` einfach mit einem lokalen Static-Server öffnen (z. B. `npx serve .`), damit ES-Module (`type="module"`) korrekt geladen werden.
+
