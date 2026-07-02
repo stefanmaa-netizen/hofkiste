@@ -5,7 +5,7 @@ Kisten-Newsletter & Anfrage-Tool für Gemüsekisten-Abo. Statisches Frontend (`i
 ## Stack
 
 - Frontend: reines HTML/CSS/JS, `supabase-js` via CDN (`esm.sh`)
-- Backend: Supabase (Postgres, Row Level Security, Anonymous Auth für Kund:innen, E-Mail/Passwort-Auth für Admin)
+- Backend: Supabase (Postgres, Row Level Security, E-Mail/Passwort-Auth für Kund:innen und Admin)
 - Hosting: GitHub Pages, automatisch deployed via GitHub Actions (`.github/workflows/pages.yml`)
 
 ## Supabase-Projekt
@@ -18,8 +18,10 @@ Zugangsdaten liegen in `config.js` (Supabase-URL + **anon key**, öffentlich und
 
 ### Einmalige Einrichtung nach dem Deploy
 
-1. **Anonymous Sign-Ins aktivieren** (für die Kund:innen-Registrierung ohne Passwort):
-   Supabase Dashboard → Authentication → Sign In / Providers → **Anonymous Sign-Ins** → aktivieren.
+1. **Site URL konfigurieren** (wichtig, sonst zeigen Einladungs-/Passwort-Links ins Leere):
+   Supabase Dashboard → Authentication → URL Configuration → **Site URL** auf die GitHub-Pages-URL
+   setzen (`https://<username>.github.io/hofkiste/`) und dieselbe URL auch bei
+   **Redirect URLs** eintragen.
 
 2. **Ersten Admin-Account anlegen:**
    - Supabase Dashboard → Authentication → Users → **Add user** (E-Mail + Passwort festlegen)
@@ -40,10 +42,33 @@ Zugangsdaten liegen in `config.js` (Supabase-URL + **anon key**, öffentlich und
      Die Person muss vorher wie oben als normaler Nutzer angelegt worden sein.
 
 3. **Empfohlene Auth-Einstellungen im Dashboard** (nicht per Migration setzbar):
-   - Authentication → Rate Limits: Limits für Anonymous Sign-ins und Sign-ups sinnvoll begrenzen
+   - Authentication → Rate Limits: Limits für Sign-ups/Sign-ins sinnvoll begrenzen
      (Standardwerte sind für ein kleines Projekt oft zu großzügig).
-   - Authentication → Policies → **Leaked Password Protection** aktivieren (prüft Admin-Passwörter
+   - Authentication → Policies → **Leaked Password Protection** aktivieren (prüft Passwörter
      gegen bekannte Datenlecks).
+   - Authentication → Providers → **Anonymous Sign-Ins** kann deaktiviert bleiben/werden — die App
+     nutzt das nicht mehr (siehe unten).
+
+## Kund:innen anlegen (Alternativtermin-Zugang)
+
+Kund:innen registrieren sich **nicht mehr selbst**. Stattdessen legst du als Kistenverwaltung die
+Konten in Supabase an, die Person wählt beim ersten Login selbst ein Passwort.
+
+1. Supabase Dashboard → Authentication → Users → **Invite user** → E-Mail-Adresse eingeben.
+2. Supabase verschickt automatisch eine Einladungs-Mail mit einem Link.
+3. Klickt die Person auf den Link, landet sie auf der Hofkiste-Seite und wird direkt zu einer
+   "Passwort festlegen"-Maske geleitet (Name + selbstgewähltes Passwort, mind. 8 Zeichen).
+   Danach ist sie eingeloggt und kann Alternativtermine anfragen.
+4. Bei künftigen Besuchen loggt sich die Person unter "Mein Konto" mit E-Mail + Passwort ein.
+   Passwort vergessen → Link auf der Login-Maske nutzt denselben E-Mail-Flow.
+
+**Hinweis zum E-Mail-Versand:** Supabase verschickt Einladungs-/Reset-Mails standardmäßig über einen
+eigenen, stark rate-limitierten Mailserver (nur wenige E-Mails/Stunde, ohne Zusagen zur Zustellbarkeit —
+landet leicht im Spam). Für zuverlässigen Versand bei mehr als ein paar Kund:innen: eigenen SMTP-Server
+hinterlegen unter Authentication → Emails → SMTP Settings (z. B. über SendGrid, Postmark, AWS SES).
+
+Alte, vor diesem Umbau per anonymer Selbstregistrierung angelegte Test-Konten können nicht mehr
+einloggen (kein Passwort) und sollten bei Gelegenheit im Dashboard aufgeräumt werden.
 
 ## Rechtliches
 

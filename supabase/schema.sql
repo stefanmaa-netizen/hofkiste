@@ -1,9 +1,10 @@
 -- Hofkiste — Supabase schema
--- Datenmodell: customers (anonyme Auth-Identität pro Kund:in), posts (Wochenbeiträge),
--- requests (Alternativtermin-Anfragen), admins (Admin-Whitelist).
+-- Datenmodell: customers (per Supabase-Einladung angelegte Kund:innen-Konten), posts
+-- (Wochenbeiträge), requests (Alternativtermin-Anfragen), admins (Admin-Whitelist).
 --
--- Voraussetzung: Anonymous Sign-ins müssen im Supabase-Projekt aktiviert sein
--- (Dashboard → Authentication → Providers → Anonymous Sign-Ins → Enable).
+-- Kund:innen-Konten werden per Supabase Dashboard → Authentication → Users → "Invite user"
+-- angelegt (E-Mail/Passwort-Auth, Passwort wählt die Person beim ersten Login selbst,
+-- siehe Migration 5 unten sowie README.md).
 
 create extension if not exists "pgcrypto";
 
@@ -189,3 +190,12 @@ grant execute on function public.promote_to_admin(uuid, text) to authenticated;
 --   });
 -- Der/die neue Admin muss vorher als normaler Nutzer (E-Mail/Passwort) im
 -- Supabase Dashboard unter Authentication → Users angelegt worden sein.
+
+-- 5) add_customers_update_self_policy
+-- Kund:innen-Konten werden jetzt per Supabase-Einladung (Authentication → Users → Invite user)
+-- angelegt statt per anonymer Selbstregistrierung. Beim ersten Login setzt die Person ihr
+-- Passwort + Namen selbst (siehe index.html: setPasswordAndName/renderSetPassword) und die App
+-- schreibt per upsert in customers. Dafür fehlte bisher eine UPDATE-Policy (nur INSERT/SELECT
+-- existierten) für den Fall, dass die Zeile schon existiert (z.B. erneuter Klick auf den Link).
+create policy "customers update self" on public.customers
+  for update using (id = auth.uid()) with check (id = auth.uid());

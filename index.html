@@ -134,6 +134,10 @@ const supabase = createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
 const pageLoadedAt = Date.now();
 const MIN_FORM_TIME_MS = 1500; // simple Bot-Bremse: Formulare, die schneller als das abgeschickt werden, wirken automatisiert
 
+// Einladungs-/Passwort-Reset-Links landen mit #access_token=...&type=invite (oder type=recovery)
+// im URL-Hash. Den Typ merken wir uns hier, BEVOR supabase-js den Hash beim Session-Aufbau entfernt.
+const initialAuthFlowType = new URLSearchParams(window.location.hash.slice(1)).get('type');
+
 const app = document.getElementById('app');
 let state = {
   tab: 'home',
@@ -144,7 +148,10 @@ let state = {
   requests: [],       // eigene Anfragen (Kund:in) bzw. alle (Admin)
   customers: [],       // nur für Admin geladen
   msg: null,
-  busy: false
+  busy: false,
+  // Nach Klick auf Einladungs-/Passwort-vergessen-Link: erst Passwort (+Name) festlegen,
+  // bevor die Person normal weiterklicken kann.
+  pendingPasswordSetup: initialAuthFlowType === 'invite' || initialAuthFlowType === 'recovery'
 };
 
 function esc(s){ return (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -185,24 +192,48 @@ function setTab(t){ state.tab = t; state.msg = null; render(); }
 
 // ---- Aktionen -----------------------------------------------------------
 
-async function registerCustomer(name, email){
+async function customerLogin(email, password){
   state.busy = true; render();
   try{
-    let session = state.session;
-    if(!session){
-      const { data, error } = await supabase.auth.signInAnonymously();
-      if(error) throw error;
-      session = data.session;
-      state.session = session;
-    }
-    const { error: insErr } = await supabase.from('customers').insert({
-      id: session.user.id, name, email
-    });
-    if(insErr) throw insErr;
-    state.msg = { type: 'ok', text: `Willkommen, ${name}! Du bist jetzt angemeldet.` };
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if(error) throw error;
+    state.msg = null;
     await loadAll();
   } catch(e){
-    state.msg = { type: 'err', text: 'Registrierung fehlgeschlagen: ' + e.message };
+    state.msg = { type: 'err', text: 'Login fehlgeschlagen: ' + e.message };
+  } finally {
+    state.busy = false; render();
+  }
+}
+
+async function forgotPassword(email){
+  state.busy = true; render();
+  try{
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    if(error) throw error;
+  } catch(e){
+    // Absichtlich keine unterschiedliche Fehlermeldung je nachdem, ob die E-Mail existiert
+    // (kein User-Enumeration-Vektor). Supabase selbst verhält sich hier bereits so.
+  } finally {
+    state.msg = { type: 'ok', text: 'Falls ein Konto mit dieser E-Mail existiert, wurde ein Link zum Zurücksetzen verschickt.' };
+    state.busy = false; render();
+  }
+}
+
+async function setPasswordAndName(name, password){
+  state.busy = true; render();
+  try{
+    const { data, error } = await supabase.auth.updateUser({ password, data: { name } });
+    if(error) throw error;
+    const { error: upErr } = await supabase.from('customers')
+      .upsert({ id: data.user.id, name, email: data.user.email }, { onConflict: 'id' });
+    if(upErr) throw upErr;
+    state.pendingPasswordSetup = false;
+    state.tab = 'account';
+    state.msg = { type: 'ok', text: `Willkommen, ${name}! Dein Passwort ist gesetzt.` };
+    await loadAll();
+  } catch(e){
+    state.msg = { type: 'err', text: 'Fehler: ' + e.message };
   } finally {
     state.busy = false; render();
   }
@@ -268,7 +299,7 @@ async function adminLogin(email, password){
 
 async function signOut(){
   await supabase.auth.signOut();
-  state = { tab: 'home', session: null, me: null, isAdmin: false, posts: state.posts, requests: [], customers: [], msg: null, busy: false };
+  state = { tab: 'home', session: null, me: null, isAdmin: false, posts: state.posts, requests: [], customers: [], msg: null, busy: false, pendingPasswordSetup: false };
   await loadAll();
 }
 
@@ -307,18 +338,34 @@ function renderHome(){
   return html;
 }
 
+function renderSetPassword(){
+  return `
+    <div class="admin-lock">
+      <h2 class="section-title">Willkommen bei Hofkiste!</h2>
+      <p class="muted">Du wurdest eingeladen. Leg dir einmalig einen Namen und ein Passwort fest.</p>
+      <label for="sp-name">Name</label>
+      <input id="sp-name" placeholder="Vor- und Nachname">
+      <label for="sp-pw">Neues Passwort</label>
+      <input id="sp-pw" type="password" placeholder="mind. 8 Zeichen">
+      <label for="sp-pw2">Passwort bestätigen</label>
+      <input id="sp-pw2" type="password">
+      <button class="btn" ${state.busy?'disabled':''} onclick="handleSetPassword()">Passwort festlegen</button>
+      ${state.msg ? `<div class="msg ${state.msg.type}">${esc(state.msg.text)}</div>` : ''}
+    </div>`;
+}
+
 function renderAccount(){
   if(!state.me){
     return `
-      <h2 class="section-title">Registrieren</h2>
+      <h2 class="section-title">Anmelden</h2>
       <div class="card">
-        <p style="font-size:13.5px;color:var(--soil);margin:0 0 4px;">Melde dich einmalig an, um Alternativtermine anfragen zu können.</p>
-        <label for="r-name">Name</label>
-        <input id="r-name" placeholder="Vor- und Nachname">
-        <label for="r-email">E-Mail</label>
-        <input id="r-email" type="email" placeholder="du@beispiel.de">
-        <div class="hp" aria-hidden="true"><label for="r-company">Firma</label><input id="r-company" tabindex="-1" autocomplete="off"></div>
-        <button class="btn" ${state.busy?'disabled':''} onclick="handleRegister()">Anmelden</button>
+        <p style="font-size:13.5px;color:var(--soil);margin:0 0 4px;">Konten werden von der Kistenverwaltung angelegt. Du bekommst eine Einladungs-E-Mail, mit der du dir ein Passwort einrichtest.</p>
+        <label for="c-email">E-Mail</label>
+        <input id="c-email" type="email" placeholder="du@beispiel.de">
+        <label for="c-pass">Passwort</label>
+        <input id="c-pass" type="password">
+        <button class="btn" ${state.busy?'disabled':''} onclick="handleCustomerLogin()">Einloggen</button>
+        <button class="link-btn" ${state.busy?'disabled':''} onclick="handleForgotPassword()">Passwort vergessen?</button>
         ${state.msg ? `<div class="msg ${state.msg.type}">${esc(state.msg.text)}</div>` : ''}
       </div>`;
   }
@@ -442,6 +489,7 @@ function renderAdmin(){
 }
 
 function render(){
+  const showNav = !state.pendingPasswordSetup;
   app.innerHTML = `
     <header class="site">
       <div>
@@ -449,17 +497,19 @@ function render(){
         <div class="tagline">Wöchentlich frisch. Direkt vom Feld in deine Kiste.</div>
       </div>
     </header>
+    ${showNav ? `
     <nav class="tabs">
       <button class="${state.tab==='home'?'active':''}" onclick="setTab('home')">Diese Woche</button>
       <button class="${state.tab==='account'?'active':''}" onclick="setTab('account')">Mein Konto</button>
       <button class="${state.tab==='admin'?'active':''}" onclick="setTab('admin')">Admin</button>
-    </nav>
+    </nav>` : ''}
     <div id="tab-content"></div>
     <div class="footer-note">Hofkiste · Daten werden sicher in Supabase gespeichert.<br>
       <a href="impressum.html">Impressum</a> · <a href="datenschutz.html">Datenschutz</a>
     </div>
   `;
   const content = document.getElementById('tab-content');
+  if(state.pendingPasswordSetup){ content.innerHTML = renderSetPassword(); return; }
   if(state.tab === 'home') content.innerHTML = renderHome();
   if(state.tab === 'account') content.innerHTML = renderAccount();
   if(state.tab === 'admin') content.innerHTML = renderAdmin();
@@ -472,16 +522,27 @@ function looksLikeBot(honeypotValue){
   return !!honeypotValue || (Date.now() - pageLoadedAt) < MIN_FORM_TIME_MS;
 }
 
-window.handleRegister = async function(){
-  const name = document.getElementById('r-name').value.trim();
-  const email = document.getElementById('r-email').value.trim();
-  const honeypot = document.getElementById('r-company').value.trim();
-  if(looksLikeBot(honeypot)){
-    // Bots bekommen eine unauffällige Erfolgsmeldung, ohne dass wirklich etwas gespeichert wird.
-    state.msg = { type: 'ok', text: `Willkommen, ${name}! Du bist jetzt angemeldet.` }; render(); return;
-  }
-  if(!name || !email){ state.msg = {type:'err', text:'Bitte Name und E-Mail angeben.'}; render(); return; }
-  await registerCustomer(name, email);
+window.handleCustomerLogin = async function(){
+  const email = document.getElementById('c-email').value.trim();
+  const password = document.getElementById('c-pass').value;
+  if(!email || !password){ state.msg = {type:'err', text:'Bitte E-Mail und Passwort angeben.'}; render(); return; }
+  await customerLogin(email, password);
+};
+
+window.handleForgotPassword = async function(){
+  const email = document.getElementById('c-email').value.trim();
+  if(!email){ state.msg = {type:'err', text:'Bitte zuerst deine E-Mail-Adresse eingeben.'}; render(); return; }
+  await forgotPassword(email);
+};
+
+window.handleSetPassword = async function(){
+  const name = document.getElementById('sp-name').value.trim();
+  const pw = document.getElementById('sp-pw').value;
+  const pw2 = document.getElementById('sp-pw2').value;
+  if(!name){ state.msg = {type:'err', text:'Bitte einen Namen angeben.'}; render(); return; }
+  if(pw.length < 8){ state.msg = {type:'err', text:'Das Passwort muss mindestens 8 Zeichen haben.'}; render(); return; }
+  if(pw !== pw2){ state.msg = {type:'err', text:'Die Passwörter stimmen nicht überein.'}; render(); return; }
+  await setPasswordAndName(name, pw);
 };
 
 window.handleRequest = async function(){
@@ -516,8 +577,12 @@ window.handleAdminLogin = async function(){
 
 window.handleSignOut = signOut;
 
-supabase.auth.onAuthStateChange((_event, session) => {
+supabase.auth.onAuthStateChange((event, session) => {
   state.session = session;
+  // Zusätzliches Sicherheitsnetz zur URL-Hash-Prüfung oben: falls supabase-js bei einem
+  // Recovery-Link das PASSWORD_RECOVERY-Event feuert, auch dann den Set-Password-Screen erzwingen.
+  if(event === 'PASSWORD_RECOVERY'){ state.pendingPasswordSetup = true; }
+  render();
 });
 
 loadAll();
