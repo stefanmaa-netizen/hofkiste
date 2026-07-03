@@ -157,7 +157,8 @@ let state = {
   // z.B. beim Klick auf "Rezept vorschlagen" verloren.
   draftPost: { week: '', content: '', recipeTitle: '', recipeText: '' },
   suggestingRecipe: false,
-  recipeMsg: null
+  recipeMsg: null,
+  archiveShown: 4   // Anzahl älterer Beiträge auf der Startseite; wird per "Mehr anzeigen" erhöht
 };
 
 function esc(s){ return (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -272,6 +273,48 @@ async function rejectRequest(id){
   if(!error) await loadAll(); else { state.msg = { type:'err', text: error.message }; render(); }
 }
 
+async function deletePost(id){
+  if(!confirm('Diesen Beitrag endgültig löschen?')) return;
+  const { error } = await supabase.from('posts').delete().eq('id', id);
+  if(!error) await loadAll(); else { state.msg = { type:'err', text: error.message }; render(); }
+}
+
+async function deleteRequest(id){
+  if(!confirm('Diese Anfrage endgültig löschen?')) return;
+  const { error } = await supabase.from('requests').delete().eq('id', id);
+  if(!error) await loadAll(); else { state.msg = { type:'err', text: error.message }; render(); }
+}
+
+async function deleteMyAccount(){
+  if(!confirm('Dein Konto und alle deine Anfragen werden endgültig gelöscht. Fortfahren?')) return;
+  state.busy = true; render();
+  try{
+    const { data, error } = await supabase.functions.invoke('delete-account');
+    if(error){
+      let detail = error.message;
+      try{
+        if(error.context && typeof error.context.json === 'function'){
+          const body = await error.context.json();
+          if(body?.error) detail = body.error;
+        }
+      } catch(_){}
+      throw new Error(detail);
+    }
+    if(data?.error) throw new Error(data.error);
+    await supabase.auth.signOut();
+    state = {
+      tab: 'home', session: null, me: null, isAdmin: false, posts: state.posts, requests: [], customers: [],
+      msg: { type: 'ok', text: 'Dein Konto wurde gelöscht.' }, busy: false, pendingPasswordSetup: false,
+      draftPost: { week: '', content: '', recipeTitle: '', recipeText: '' }, suggestingRecipe: false, recipeMsg: null,
+      archiveShown: 4
+    };
+    render();
+  } catch(e){
+    state.msg = { type: 'err', text: 'Konto löschen fehlgeschlagen: ' + e.message };
+    state.busy = false; render();
+  }
+}
+
 async function publishPost(week, content, recipeTitle, recipeText){
   state.busy = true; render();
   try{
@@ -337,7 +380,8 @@ async function signOut(){
   state = {
     tab: 'home', session: null, me: null, isAdmin: false, posts: state.posts, requests: [], customers: [],
     msg: null, busy: false, pendingPasswordSetup: false,
-    draftPost: { week: '', content: '', recipeTitle: '', recipeText: '' }, suggestingRecipe: false, recipeMsg: null
+    draftPost: { week: '', content: '', recipeTitle: '', recipeText: '' }, suggestingRecipe: false, recipeMsg: null,
+    archiveShown: 4
   };
   await loadAll();
 }
@@ -346,7 +390,7 @@ async function signOut(){
 
 function renderHome(){
   const latest = state.posts[0];
-  const older = state.posts.slice(1,5);
+  const older = state.posts.slice(1, 1 + state.archiveShown);
   let html = '<h2 class="section-title">Diese Woche</h2>';
   if(latest){
     html += `
@@ -371,8 +415,13 @@ function renderHome(){
         <div class="ticket-week" style="font-size:16px;">${esc(p.week || p.title)}</div>
         <div class="ticket-date">${new Date(p.created_at).toLocaleDateString('de-DE')}</div>
         <p style="margin-top:8px;">${esc(p.content).replace(/\n/g,'<br>')}</p>
+        ${p.recipe_text ? `<div class="recipe-box"><b>Rezeptidee: ${esc(p.recipe_title||'')}</b><br>${esc(p.recipe_text).replace(/\n/g,'<br>')}</div>` : ''}
       </div>`;
     });
+    const remaining = state.posts.length - 1 - older.length;
+    if(remaining > 0){
+      html += `<div style="text-align:center;"><button class="btn secondary small" onclick="showMorePosts()">Ältere Beiträge anzeigen (${remaining})</button></div>`;
+    }
   }
   return html;
 }
@@ -414,7 +463,10 @@ function renderAccount(){
     <div class="card">
       <div style="font-family:'Fraunces',serif;font-weight:600;font-size:17px;">${esc(state.me.name)}</div>
       <div class="muted">${esc(state.me.email)}</div>
-      <button class="link-btn" onclick="handleSignOut()">Abmelden</button>
+      <div style="display:flex;gap:16px;">
+        <button class="link-btn" onclick="handleSignOut()">Abmelden</button>
+        <button class="link-btn" ${state.busy?'disabled':''} onclick="deleteMyAccount()">Konto löschen</button>
+      </div>
     </div>
 
     <h2 class="section-title">Alternativtermin anfragen</h2>
@@ -522,7 +574,23 @@ function renderAdmin(){
       const cust = state.customers.find(c => c.id === r.customer_id);
       html += `<div class="req-row">
         <div class="req-meta"><b>${esc(cust?.name || '—')}</b> · ${esc(r.requested_date)}</div>
-        <span class="status ${r.status}">${esc(r.status)}</span>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <span class="status ${r.status}">${esc(r.status)}</span>
+          <button class="btn small secondary" onclick="deleteRequest('${r.id}')" aria-label="Anfrage löschen">Löschen</button>
+        </div>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  if(state.posts.length){
+    html += `<h2 class="section-title">Beiträge verwalten (${state.posts.length})</h2><div class="card">`;
+    state.posts.forEach(p => {
+      html += `<div class="req-row">
+        <div class="req-meta"><b>${esc(p.week || p.title)}</b>
+          <div class="muted">${new Date(p.created_at).toLocaleDateString('de-DE')}</div>
+        </div>
+        <button class="btn small secondary" onclick="deletePost('${p.id}')" aria-label="Beitrag löschen">Löschen</button>
       </div>`;
     });
     html += `</div>`;
@@ -600,6 +668,10 @@ window.handleRequest = async function(){
 
 window.approveRequest = approveRequest;
 window.rejectRequest = rejectRequest;
+window.deletePost = deletePost;
+window.deleteRequest = deleteRequest;
+window.deleteMyAccount = deleteMyAccount;
+window.showMorePosts = function(){ state.archiveShown += 10; render(); };
 
 window.handlePublish = async function(){
   const week = document.getElementById('p-week').value.trim();

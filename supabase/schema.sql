@@ -192,6 +192,18 @@ grant execute on function public.promote_to_admin(uuid, text) to authenticated;
 -- Supabase Dashboard unter Authentication → Users angelegt worden sein.
 
 -- 5) add_customers_update_self_policy
+-- Nötig, damit der Upsert beim Passwort-Setzen (Invite-Flow) auch dann klappt,
+-- wenn die customers-Zeile schon existiert (z.B. erneuter Invite-Link-Klick).
+create policy "customers update self" on public.customers
+  for update using (id = auth.uid()) with check (id = auth.uid());
+
+-- 6) restrict_promote_to_admin_exposure
+-- Security-Advisor-WARN: promote_to_admin war trotz "revoke from public" noch für
+-- anon per REST-RPC aufrufbar. Explizit entziehen; der eigentliche Schutz bleibt
+-- der is_admin()-Check in der Funktion selbst.
+revoke execute on function public.promote_to_admin(uuid, text) from anon;
+
+-- 5) add_customers_update_self_policy
 -- Kund:innen-Konten werden jetzt per Supabase-Einladung (Authentication → Users → Invite user)
 -- angelegt statt per anonymer Selbstregistrierung. Beim ersten Login setzt die Person ihr
 -- Passwort + Namen selbst (siehe index.html: setPasswordAndName/renderSetPassword) und die App

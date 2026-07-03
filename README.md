@@ -70,6 +70,12 @@ hinterlegen unter Authentication → Emails → SMTP Settings (z. B. über SendG
 Alte, vor diesem Umbau per anonymer Selbstregistrierung angelegte Test-Konten können nicht mehr
 einloggen (kein Passwort) und sollten bei Gelegenheit im Dashboard aufgeräumt werden.
 
+**Konto löschen (DSGVO):** Kund:innen können ihr Konto unter "Mein Konto" selbst löschen. Das läuft
+über die Edge Function [`delete-account`](supabase/functions/delete-account/index.ts), die den
+auth-Nutzer per Service-Role entfernt — `customers` und `requests` hängen per `ON DELETE CASCADE`
+daran und werden mitgelöscht. Admin-Konten sind von der Selbstlöschung ausgenommen (nur übers
+Dashboard löschbar), damit nicht versehentlich das letzte Admin-Konto verschwindet.
+
 ## Rezeptvorschlag (Spoonacular)
 
 Im Admin-Bereich gibt es unter "Was ist diese Woche in der Kiste?" einen Button **"Rezept
